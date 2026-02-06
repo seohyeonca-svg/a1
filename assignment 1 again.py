@@ -83,7 +83,7 @@ def dirty_prices_from_clean(maturity_date: date, cpn_rate: float,
         out.append(clean + AI)
     return np.array(out, float)
 
-# similar to set up eqn
+
 def pv_from_y_cont(y, settle, maturity, cpn_rate, face):
     """P = sum CF * exp(-y t), t=days/365, semiannual coupons, continuous comp."""
     dates = cashflow_semiannual(maturity, settle)
@@ -97,7 +97,7 @@ def pv_from_y_cont(y, settle, maturity, cpn_rate, face):
         pv += cf * np.exp(-y * t)
     return pv
 
-# same as before
+
 def solve_ytm_continuous(dirty_price, settle, maturity, cpn_rate, face):
     """Solve for y in continuous-compounding bond pricing equation."""
     f = lambda y: pv_from_y_cont(y, settle, maturity, cpn_rate, face) - dirty_price
@@ -174,15 +174,7 @@ plt.show()
 # =========================
 def bootstrap_spot_curve_for_day(settle: date, maturities, coupon_rates, dirty_prices_day, face,
                                  time_round=10):
-    """
-    Bootstrap discount factors DF(T) at each bond maturity time using:
-      Price = sum_{k<last} CF_k * DF(t_k) + CF_last * DF(T_last)
-      => DF(T_last) = (Price - PV_known) / CF_last
 
-    Continuous comp spot: r(T) = -ln(DF(T))/T
-
-    IMPORTANT: times are rounded so DF lookup does not break due to floating-point keys.
-    """
     order = np.argsort(maturities)
     maturities = maturities[order]
     coupon_rates = coupon_rates[order]
@@ -191,26 +183,26 @@ def bootstrap_spot_curve_for_day(settle: date, maturities, coupon_rates, dirty_p
     df_map = {}  # key: rounded t, value: DF(t)
 
     for maturity, cpn, price in zip(maturities, coupon_rates, dirty_prices_day):
-        dates = cashflow_semiannual(maturity, settle)   # ex. 2027/03/01 -> [2026/03/01, 2026/09/01, 2027/03/01]
-        if len(dates) == 0:    # If bond already  matured, then skip
+        dates = cashflow_semiannual(maturity, settle)
+        if len(dates) == 0:
             continue
 
-        coupon = face * cpn / 2.0    # calculate the cpn for b2
-        times = [round((d - settle).days/365.0, time_round) for d in dates] # for each d in dates, calculate # days between jan 5th and d -> [0.15, 0.65, 1.15]
-        cfs = [coupon + (face if d == maturity else 0.0) for d in dates]    # for bond 3, we get [0.625, 0.625, 100.625]
+        coupon = face * cpn / 2.0
+        times = [round((d - settle).days/365.0, time_round) for d in dates]
+        cfs = [coupon + (face if d == maturity else 0.0) for d in dates]
 
         pv_known = 0.0
-        for t, cf in zip(times[:-1], cfs[:-1]):    # iterate over [0.15, 0.65], and [0.625, 0.625]
+        for t, cf in zip(times[:-1], cfs[:-1]):
             if t not in df_map:
                 raise RuntimeError(
                     f"Missing DF for t={t} when bootstrapping maturity={maturity} on settle={settle}. "
                     "This means your cashflow times don't line up in increasing order."
                 )
-            pv_known += cf * df_map[t]    # bc of b1, b2, df_map = {0.15: .., 0.65: ..}, so pv_known = 0.625*df_map[0.15] + 0.625*df_map[0.65]
+            pv_known += cf * df_map[t]
 
-        T_last = times[-1]   # t = 1.15
-        CF_last = cfs[-1]    # cf = 100.625
-        DF_last = (price - pv_known) / CF_last    # price = pv_known + CF_last*e^(-DF(t)*t)
+        T_last = times[-1]
+        CF_last = cfs[-1]
+        DF_last = (price - pv_known) / CF_last
 
         if DF_last <= 0:
             raise RuntimeError(f"DF<=0 at maturity={maturity}, settle={settle}. Check inputs.")
@@ -229,16 +221,13 @@ for i in range(10):
     )
     spot_rates_by_day.append((t_pts, r_pts))
 
-# Table: evaluate spot curve at each bond maturity time-to-maturity for that day
-# FIX that prevents NaNs on certain days:
-#   round Tm the same way as bootstrap knot times
+
 spot_at_maturities = np.full((10,10), np.nan, float)
 for i in range(10):
-    Tm = np.round(ttm[i,:], TIME_ROUND)   # <-- critical fix to avoid out-of-range due to float mismatch
+    Tm = np.round(ttm[i,:], TIME_ROUND)
     t_pts, r_pts = spot_rates_by_day[i]
     interp = linear_interp(t_pts, r_pts, extrapolate=False)
 
-    # Optional extra safety: clip into [min,max] so no out-of-range NaNs
     tmin, tmax = np.min(t_pts), np.max(t_pts)
     Tm_clip = np.clip(Tm, tmin, tmax)
 
@@ -276,7 +265,6 @@ plt.show()
 
 # =========================
 # (c) 1-YEAR FORWARD CURVE from spot curve (continuous comp)
-# F(t,t+1) = S(t+1)(t+1) - S(t)t
 # =========================
 spot_knots = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=float)
 forward_1y = np.full((len(PRICING_DATES), 4), np.nan, dtype=float)
@@ -327,28 +315,13 @@ forward_df.round(10).to_csv("q2_forward_table.csv")
 
 # ============================================================
 # Q5 (Covariance matrices)
-#
-# We build 5 "yield rates" as yields at 5 different maturities (fixed maturities),
-# then compute daily log-returns:
-#   X_{i,j} = log( r_{i,j+1} / r_{i,j} ),   j = 1,...,9
-# and finally compute the sample covariance matrix of X across time.
-#
-# IMPORTANT:
-# - For "yields": we use the Part (a) YTM curve (NOT spot rates).
-# - For "forwards": we use the 4 forward rates from Part (c) (NO spot rates used here).
 # ============================================================
 
 # -------------------------
 # 5 yield maturities (fixed maturities)
-# Choose maturities you can justify; here we use 1–5 years (standard + within your bond range).
-# This matches hint: "five different yield rates (could be yields for different maturities)."
 # -------------------------
 YIELD_MATS = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=float)  # i = 1,...,5
 
-# -------------------------
-# Build r_{i,j} = yield at maturity i on day j from Part (a) YTM curve
-# yields_daily: shape (10 days, 5 maturities)
-# -------------------------
 yields_daily = np.full((len(PRICING_DATES), len(YIELD_MATS)), np.nan, dtype=float)
 
 for j_day in range(len(PRICING_DATES)):
@@ -376,7 +349,6 @@ print(yields_daily_df.round(10))
 
 # -------------------------
 # Compute X_{i,j} = log(r_{i,j+1} / r_{i,j}), j=1,...,9
-# X_yields: shape (9 returns x 5 variables)
 # -------------------------
 if np.any(~np.isfinite(yields_daily)):
     raise RuntimeError("Non-finite yield level encountered in yields_daily; cannot take log-returns.")
@@ -398,7 +370,6 @@ print(X_yields_df.round(10))
 
 # -------------------------
 # Covariance matrix of yield log-returns (5x5)
-# (sample covariance with ddof=1)
 # -------------------------
 cov_yields = np.cov(X_yields, rowvar=False, ddof=1)
 cov_yields_df = pd.DataFrame(
@@ -411,10 +382,7 @@ print("\nQ5: Covariance matrix of daily log-returns of yields (5 x 5):")
 print(cov_yields_df.round(12))
 
 # ============================================================
-# FORWARDS PART (also in Q5 hint):
-# Use the 4 forward rates (NO spot rates) from Part (c):
-#   forward_1y[:,0]=F(1,2), forward_1y[:,1]=F(2,3), forward_1y[:,2]=F(3,4), forward_1y[:,3]=F(4,5)
-# Compute log-returns and covariance (4x4).
+# FORWARDS PART
 # ============================================================
 
 F = forward_1y  # shape (10 x 4)
