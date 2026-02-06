@@ -427,7 +427,6 @@ F_df.round(10).to_csv("q5_forward_levels.csv")
 X_fwds_df.round(10).to_csv("q5_forward_logreturns.csv")
 cov_fwds_df.round(12).to_csv("q5_cov_forward_logreturns.csv")
 
-
 # ============================================================
 # Eigen-decomposition of covariance matrices (Q5 results)
 # ============================================================
