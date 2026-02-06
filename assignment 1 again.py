@@ -491,3 +491,101 @@ eigvecs_y_df.to_csv("q5_yield_eigenvectors.csv")
 
 eigvals_f_df.to_csv("q5_forward_eigenvalues.csv")
 eigvecs_f_df.to_csv("q5_forward_eigenvectors.csv")
+
+# =========================
+# LaTeX table outputs (Tables 2–5)
+# =========================
+
+def latex_cov_table(cov_df: pd.DataFrame, caption: str, label: str) -> str:
+    """Covariance table like your Table 1/2 (X1..Xn, scientific notation)."""
+    n = cov_df.shape[0]
+    cov = cov_df.copy()
+    cov.index  = [f"$X_{i}$" for i in range(1, n+1)]
+    cov.columns = [f"$X_{i}$" for i in range(1, n+1)]
+
+    # column_format: 1 left label column + n numeric columns
+    colfmt = "l" + "r"*n
+
+    tex = cov.to_latex(
+        escape=False,
+        float_format=lambda x: f"{x:.6e}",   # matches your scientific notation style
+        column_format=colfmt,
+        caption=caption,
+        label=label
+    )
+    return tex
+
+
+def latex_eig_table(eigvals: np.ndarray, eigvecs: np.ndarray,
+                    caption: str, label: str,
+                    vec_decimals: int = 4, val_sig: int = 7) -> str:
+    """
+    Eigen table like your Table 3/4:
+    First row: lambda values (scientific notation)
+    Second row: each eigenvector as a column vector (bmatrix) in each cell
+    """
+    k = len(eigvals)
+
+    # format eigenvalues like 6.028690e-04
+    lam_cells = [f"{v:.6e}" for v in eigvals]
+
+    # format eigenvectors like column vectors shown in your image
+    vec_cells = []
+    for j in range(k):
+        col = eigvecs[:, j]
+        entries = " \\\\ ".join([f"{x:.{vec_decimals}f}" for x in col])
+        vec_cells.append("\\begin{bmatrix}" + entries + "\\end{bmatrix}")
+
+    # build tabular
+    colfmt = "l" + "r"*k
+    header = "\\begin{table}[ht]\n\\centering\n"
+    tab_begin = f"\\begin{{tabular}}{{{colfmt}}}\n\\hline\n"
+    row1 = "$\\lambda$ & " + " & ".join(lam_cells) + " \\\\\n"
+    row2 = "$\\vec v$ & " + " & ".join(vec_cells) + " \\\\\n"
+    tab_end = "\\hline\n\\end{tabular}\n"
+    footer = f"\\caption{{{caption}}}\n\\label{{{label}}}\n\\end{{table}}\n"
+
+    return header + tab_begin + row1 + row2 + tab_end + footer
+
+
+# -------- Table 1: covariance of daily log-returns of yield (5x5) --------
+tex_cov_yields = latex_cov_table(
+    cov_yields_df,
+    caption="log-returns of yield.",
+    label="tab:cov_yield_logret"
+)
+
+# -------- Table 2: covariance of daily log-returns of 1-yr forward (4x4) --------
+tex_cov_fwds = latex_cov_table(
+    cov_fwds_df,
+    caption="log-returns 1-yr forward rate",
+    label="tab:cov_fwd_logret"
+)
+
+# -------- Table 3: eigenvalues/eigenvectors of yield covariance --------
+tex_eig_yields = latex_eig_table(
+    eigvals_y, eigvecs_y,
+    caption="eigen of yield rate",
+    label="tab:eig_yield",
+    vec_decimals=4
+)
+
+# -------- Table 4: eigenvalues/eigenvectors of forward covariance --------
+tex_eig_fwds = latex_eig_table(
+    eigvals_f, eigvecs_f,
+    caption="eigen of 1-yr forward rate",
+    label="tab:eig_fwd",
+    vec_decimals=4
+)
+
+# Print LaTeX to console (copy-paste into your .tex)
+print("\n% ---- Table 1 ----\n", tex_cov_yields)
+print("\n% ---- Table 2 ----\n", tex_cov_fwds)
+print("\n% ---- Table 3 ----\n", tex_eig_yields)
+print("\n% ---- Table 4 ----\n", tex_eig_fwds)
+
+# Optionally save to separate .tex files
+with open("table1_cov_yield.tex", "w") as f: f.write(tex_cov_yields)
+with open("table2_cov_fwd.tex", "w") as f: f.write(tex_cov_fwds)
+with open("table3_eig_yield.tex", "w") as f: f.write(tex_eig_yields)
+with open("table4_eig_fwd.tex", "w") as f: f.write(tex_eig_fwds)
